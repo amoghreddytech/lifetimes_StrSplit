@@ -2,13 +2,13 @@
 // #![warn(missing_debug_implementations, rust_2018_idioms, missing_docs)]
 
 #[derive(Debug)]
-pub struct StrSplit<'haystack, 'delimiter> {
+pub struct StrSplit<'haystack, D> {
     remainder: Option<&'haystack str>,
-    delimiter: &'delimiter str,
+    delimiter: D,
 }
 
-impl<'haystack, 'delimiter> StrSplit<'haystack, 'delimiter> {
-    pub fn new(haystack: &'haystack str, delimiter: &'delimiter str) -> Self {
+impl<'haystack, D> StrSplit<'haystack, D> {
+    pub fn new(haystack: &'haystack str, delimiter: D) -> Self {
         Self {
             remainder: Some(haystack),
             delimiter,
@@ -16,14 +16,21 @@ impl<'haystack, 'delimiter> StrSplit<'haystack, 'delimiter> {
     }
 }
 
-impl<'haystack, 'delimiter> Iterator for StrSplit<'haystack, 'delimiter> {
+pub trait Delimiter {
+    fn _find_next(&self, s: &str) -> Option<(usize, usize)>;
+}
+
+impl<'haystack, D> Iterator for StrSplit<'haystack, D>
+where
+    D: Delimiter,
+{
     type Item = &'haystack str;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(ref mut remainder) = self.remainder {
-            if let Some(next_delim) = remainder.find(self.delimiter) {
-                let until_delim = &remainder[..next_delim];
-                *remainder = &remainder[(next_delim + self.delimiter.len())..];
+            if let Some((delim_start, delim_end)) = self.delimiter._find_next(remainder) {
+                let until_delim = &remainder[..delim_start];
+                *remainder = &remainder[delim_end..];
                 Some(until_delim)
             } else {
                 self.remainder.take()
@@ -34,9 +41,24 @@ impl<'haystack, 'delimiter> Iterator for StrSplit<'haystack, 'delimiter> {
     }
 }
 
+impl Delimiter for &str {
+    fn _find_next(&self, s: &str) -> Option<(usize, usize)> {
+        s.find(self).map(|start| (start, start + self.len()))
+    }
+}
+
+impl Delimiter for char {
+    fn _find_next(&self, s: &str) -> Option<(usize, usize)> {
+        s.char_indices()
+            .find(|(_, c)| c == self)
+            .map(|(start, _)| (start, self.len_utf8()))
+    }
+}
+
 // gives you the string until; the first occourance of that character;
 fn until_char<'s>(s: &'s str, c: char) -> &'s str {
-    StrSplit::new(s, &format!("{}", c))
+    let delim = format!("{}", c);
+    StrSplit::new(s, c)
         .next()
         .expect("StrSplit always gives at least one result")
 }
